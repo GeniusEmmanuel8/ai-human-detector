@@ -38,7 +38,7 @@ def lemmatize_text(tokens: list[str]) -> list[str]:
     return [lemmatizer.lemmatize(tok) for tok in tokens]
 
 def preprocess_text(text: str) -> str:
-    """Complete text preprocessing pipeline"""
+    """Complete text preprocessing pipeline - same as training"""
     if not isinstance(text, str):
         text = str(text)
     
@@ -47,35 +47,35 @@ def preprocess_text(text: str) -> str:
     lemmas = lemmatize_text(tokens)
     return " ".join(lemmas)
 
-# ─── LOAD YOUR SAVED VECTORIZER & MODELS ───────────────────────────────────────
+# ─── LOAD YOUR SAVED PIPELINE MODELS ───────────────────────────────────────────
 @st.cache_resource
-def load_models():
-    """Load vectorizer and models with error handling"""
+def load_pipeline_models():
+    """Load complete pipeline models"""
     try:
-        vectorizer = load("models/tfidf_vectorizer.pkl")
+        # Load the complete pipelines (not individual components)
         models = {
-            "SVM": load("models/svm_model.pkl"),
-            "Decision Tree": load("models/decision_tree_model.pkl"),
+            "SVM": load("models/svm_pipeline.pkl"),  # or whatever you named it
+            "Decision Tree": load("models/dt_pipeline.pkl"),  # or whatever you named it
         }
         
-        # Debug: Print vectorizer info
-        st.write("Vectorizer loaded successfully")
-        st.write(f"Vectorizer type: {type(vectorizer)}")
-        if hasattr(vectorizer, 'get_params'):
-            params = vectorizer.get_params()
-            st.write(f"Vectorizer preprocessor: {params.get('preprocessor', 'None')}")
-            st.write(f"Vectorizer lowercase: {params.get('lowercase', 'None')}")
-        
-        return vectorizer, models
+        st.success("✅ Pipeline models loaded successfully!")
+        return models
     except FileNotFoundError as e:
         st.error(f"Model files not found: {e}")
-        st.error("Please ensure the models/ directory contains the required .pkl files")
+        st.error("Expected files: svm_pipeline.pkl, dt_pipeline.pkl")
+        st.error("Make sure to save your models like this:")
+        st.code("""
+# In your training script:
+from joblib import dump
+dump(svm_grid.best_estimator_, 'models/svm_pipeline.pkl')
+dump(dt_grid.best_estimator_, 'models/dt_pipeline.pkl')
+        """)
         st.stop()
     except Exception as e:
         st.error(f"Error loading models: {e}")
         st.stop()
 
-vectorizer, models = load_models()
+models = load_pipeline_models()
 
 # ─── STREAMLIT UI ─────────────────────────────────────────────────────────────
 st.title("🤖 AI vs Human Text Detector")
@@ -113,90 +113,82 @@ if final_text:
     
     if st.button("Predict"):
         try:
-            # Debug: Show original text info
+            # Debug info
             st.write(f"Original text length: {len(final_text)} characters")
-            st.write(f"Original text type: {type(final_text)}")
-            st.write(f"First 100 chars: {repr(final_text[:100])}")
             
-            # 1) Preprocess - Try different approaches
+            # Preprocess the text exactly as done during training
+            preprocessed_text = preprocess_text(final_text)
             
-            # Option 1: Use your preprocessing
-            cleaned = preprocess_text(final_text)
-            st.write(f"After preprocessing - Length: {len(cleaned)}, Type: {type(cleaned)}")
-            st.write(f"Cleaned sample: {repr(cleaned[:100])}")
+            st.write(f"Preprocessed text length: {len(preprocessed_text)} characters")
             
             # Ensure we have some text after preprocessing
-            if not cleaned or len(cleaned.strip()) == 0:
+            if not preprocessed_text or len(preprocessed_text.strip()) == 0:
                 st.error("No text remaining after preprocessing. Please try with different text.")
                 st.stop()
             
-            # Option 2: Try with minimal preprocessing for the vectorizer
-            # Some vectorizers expect raw text and do their own preprocessing
+            # Use the complete pipeline - it handles vectorization AND prediction
+            pipeline = models[model_name]
             
-            # Try both approaches
-            st.write("Trying with preprocessed text...")
-            try:
-                X1 = vectorizer.transform([cleaned])
-                st.success("✅ Preprocessed text worked!")
-                X = X1
-            except Exception as e1:
-                st.write(f"❌ Preprocessed text failed: {e1}")
-                st.write("Trying with raw text...")
-                try:
-                    # Try with just the original text
-                    X2 = vectorizer.transform([final_text])
-                    st.success("✅ Raw text worked!")
-                    X = X2
-                except Exception as e2:
-                    st.write(f"❌ Raw text also failed: {e2}")
-                    # Try with minimal cleaning
-                    st.write("Trying with minimal cleaning...")
-                    minimal_clean = re.sub(r'[^\w\s]', ' ', final_text.lower()).strip()
-                    X3 = vectorizer.transform([minimal_clean])
-                    st.success("✅ Minimal cleaning worked!")
-                    X = X3
+            # The pipeline expects the same format as training (preprocessed text)
+            prediction = pipeline.predict([preprocessed_text])[0]
             
-            # Debug: Show vectorization result
-            st.write(f"Vectorization successful. Shape: {X.shape}")
-            
-            # 3) Predict
-            clf = models[model_name]
-            pred = clf.predict(X)[0]
-            
-            # 4) Display results
+            # Display results
             st.subheader("Prediction:")
-            if pred == 1:
+            if prediction == 1:
                 st.write("🧠 **AI-Written**")
             else:
                 st.write("👤 **Human-Written**")
             
-            # 5) Confidence (if available)
-            if hasattr(clf, "predict_proba"):
-                proba = clf.predict_proba(X)[0]
+            # Get confidence scores
+            if hasattr(pipeline, "predict_proba"):
+                proba = pipeline.predict_proba([preprocessed_text])[0]
                 confidence = max(proba)
                 st.write(f"**Confidence:** {confidence:.2%}")
                 
                 # Show probability for each class
                 st.write(f"Human probability: {proba[0]:.2%}")
                 st.write(f"AI probability: {proba[1]:.2%}")
+            
+            # Debug: Show what was actually processed
+            with st.expander("Debug Info"):
+                st.write("**Preprocessed text (first 200 chars):**")
+                st.write(preprocessed_text[:200])
                 
         except Exception as e:
             st.error(f"Error during prediction: {e}")
-            st.error("Please check your input text and try again.")
             
             # Enhanced debug information
             st.write("=== DEBUG INFORMATION ===")
             st.write(f"Final text type: {type(final_text)}")
-            st.write(f"Final text length: {len(final_text) if hasattr(final_text, '__len__') else 'No length'}")
-            if 'cleaned' in locals():
-                st.write(f"Cleaned text type: {type(cleaned)}")
-                st.write(f"Cleaned text length: {len(cleaned) if hasattr(cleaned, '__len__') else 'No length'}")
-            
-            # Try to see what the vectorizer expects
-            if hasattr(vectorizer, 'get_params'):
-                st.write(f"Vectorizer params: {vectorizer.get_params()}")
+            if 'preprocessed_text' in locals():
+                st.write(f"Preprocessed text type: {type(preprocessed_text)}")
+                st.write(f"Preprocessed sample: {repr(preprocessed_text[:100])}")
             
             import traceback
             st.code(traceback.format_exc())
+            
 else:
     st.info("Please enter some text or upload a file to analyze.")
+    
+    # Show instructions
+    st.markdown("""
+    ### Instructions:
+    1. Either paste text directly into the text area above
+    2. Or upload a PDF, DOCX, or TXT file
+    3. Choose your preferred model (SVM or Decision Tree)
+    4. Click "Predict" to see if the text was likely written by AI or human
+    
+    ### Expected Model Files:
+    Make sure your `models/` directory contains:
+    - `svm_pipeline.pkl` - Complete SVM pipeline
+    - `dt_pipeline.pkl` - Complete Decision Tree pipeline
+    
+    ### How to save your models correctly:
+    ```python
+    from joblib import dump
+    
+    # After training your GridSearchCV
+    dump(svm_grid.best_estimator_, 'models/svm_pipeline.pkl')
+    dump(dt_grid.best_estimator_, 'models/dt_pipeline.pkl')
+    ```
+    """)
