@@ -7,12 +7,11 @@ import re
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 
-# ─── DOWNLOAD NLTK DATA ONCE ──────────────────────────────────────────────────────
+# ─── NLTK SETUP ────────────────────────────────────────────────────────────────
 nltk.download('punkt')
 nltk.download('stopwords')
 nltk.download('wordnet')
 
-# ─── TEXT PREPROCESSING ─────────────────────────────────────────────────────────
 stop_words = set(stopwords.words('english'))
 lemmatizer = WordNetLemmatizer()
 
@@ -27,52 +26,58 @@ def tokenize_and_filter(text: str) -> list[str]:
     tokens = text.split()
     return [t for t in tokens if len(t) > 1 and t not in stop_words]
 
-def lemmatize_tokens(tokens: list[str]) -> list[str]:
-    return [lemmatizer.lemmatize(t) for t in tokens]
+def lemmatize_text(tokens: list[str]) -> list[str]:
+    return [lemmatizer.lemmatize(tok) for tok in tokens]
 
 def preprocess_text(text: str) -> str:
-    cleaned = clean_text(text)
-    tokens  = tokenize_and_filter(cleaned)
-    lemmas  = lemmatize_tokens(tokens)
+    text = clean_text(text)
+    tokens = tokenize_and_filter(text)
+    lemmas = lemmatize_text(tokens)
     return " ".join(lemmas)
 
-# ─── LOAD VECTOR AND MODELS ──────────────────────────────────────────────────────
+# ─── LOAD YOUR SAVED VECTORIZER & MODELS ───────────────────────────────────────
 vectorizer = load("models/tfidf_vectorizer.pkl")
+
 models = {
-    "SVM":           load("models/svm_model.pkl"),
-    "Decision Tree": load("models/decision_tree_model.pkl")
+    "SVM": load("models/svm_model.pkl"),
+    "Decision Tree": load("models/decision_tree_model.pkl"),
+    # AdaBoost removed per homework instructions
 }
 
-# ─── STREAMLIT UI ────────────────────────────────────────────────────────────────
+# ─── STREAMLIT UI ─────────────────────────────────────────────────────────────
 st.title("🤖 AI vs Human Text Detector")
 
-text_input    = st.text_area("Paste your text here:")
-uploaded_file = st.file_uploader("…or upload a PDF, DOCX or TXT", type=["pdf","docx","txt"])
+text_input = st.text_area("Paste your text here:")
+uploaded_file = st.file_uploader(
+    "Or upload a PDF, DOCX, or TXT file", type=["pdf", "docx", "txt"]
+)
 
-def extract_text(f) -> str:
-    """Pull text out of whatever file the user uploaded."""
-    if f.name.endswith(".pdf"):
-        with pdfplumber.open(f) as pdf:
-            return "\n".join(p.extract_text() or "" for p in pdf.pages)
-    if f.name.endswith(".docx"):
-        return docx2txt.process(f)
-    if f.name.endswith(".txt"):
-        return f.read().decode("utf-8")
+def extract_text(file) -> str:
+    if file.name.endswith(".pdf"):
+        with pdfplumber.open(file) as pdf:
+            pages = [p.extract_text() for p in pdf.pages]
+            return "\n".join([t for t in pages if t])
+    if file.name.endswith(".docx"):
+        return docx2txt.process(file)
+    if file.name.endswith(".txt"):
+        return file.read().decode("utf-8")
     return ""
 
 final_text = text_input or (extract_text(uploaded_file) if uploaded_file else "")
 
 if final_text:
-    choice = st.selectbox("Choose a model", list(models.keys()))
+    model_name = st.selectbox("Choose a model", list(models.keys()))
     if st.button("Predict"):
-        # 1) Preprocess → 2) Vectorize → 3) Classify
-        clean  = preprocess_text(final_text)
-        X_vec  = vectorizer.transform([clean])
-        model  = models[choice]
-        pred   = model.predict(X_vec)[0]
-        prob   = model.predict_proba(X_vec)[0][1] if hasattr(model, "predict_proba") else None
-
+        # 1) Preprocess
+        cleaned = preprocess_text(final_text)
+        # 2) Vectorize
+        X = vectorizer.transform([cleaned])
+        # 3) Predict
+        clf = models[model_name]
+        pred = clf.predict(X)[0]
         st.subheader("Prediction:")
-        st.write("🧠 AI-Written" if pred==1 else "👤 Human-Written")
-        if prob is not None:
+        st.write("🧠 AI-Written" if pred == 1 else "👤 Human-Written")
+        # 4) Confidence (if available)
+        if hasattr(clf, "predict_proba"):
+            prob = clf.predict_proba(X)[0][1]
             st.write(f"Confidence: {prob:.2f}")
