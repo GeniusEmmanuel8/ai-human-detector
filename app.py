@@ -66,9 +66,9 @@ if final_text:
     model_choice = st.selectbox("Choose a model", list(models.keys()))
     if st.button("Predict"):
         cleaned = preprocess_text(final_text)
-        X = vectorizer.transform([cleaned])
         model = models[model_choice]
-        pred = model.predict(X)[0]
+        pred = model.predict([cleaned])[0]  # Let the model's internal pipeline handle vectorization
+
         prob = model.predict_proba(X)[0][1] if hasattr(model, "predict_proba") else None
         st.subheader("Prediction:")
         st.write("🧠 AI-Written" if pred == 1 else "👤 Human-Written")
