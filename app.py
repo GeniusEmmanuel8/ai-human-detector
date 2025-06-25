@@ -50,31 +50,65 @@ f   = st.file_uploader("…or upload a PDF, DOCX, or TXT", type=["pdf","docx","t
 
 def extract_text(file) -> str:
     """Turn uploaded file into one big string."""
-    name = file.name.lower()
-    if name.endswith(".pdf"):
-        with pdfplumber.open(file) as pdf:
-            return "\n".join(p.extract_text() or "" for p in pdf.pages)
-    if name.endswith(".docx"):
-        return docx2txt.process(file)
-    if name.endswith(".txt"):
-        return file.read().decode("utf-8")
-    return ""
+    try:
+        name = file.name.lower()
+        if name.endswith(".pdf"):
+            with pdfplumber.open(file) as pdf:
+                text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+                return str(text) if text else ""
+        if name.endswith(".docx"):
+            file.seek(0)  # Reset file pointer
+            text = docx2txt.process(file)
+            return str(text) if text else ""
+        if name.endswith(".txt"):
+            file.seek(0)  # Reset file pointer
+            text = file.read().decode("utf-8")
+            return str(text) if text else ""
+        return ""
+    except Exception as e:
+        st.error(f"Error extracting text from file: {e}")
+        return ""
 
 # decide which to use
 content = txt or (extract_text(f) if f else "")
-if not content:
+if not isinstance(content, str):
+    content = str(content) if content else ""
+
+if not content or not content.strip():
     st.info("Please paste some text or upload a file above.")
     st.stop()
 
 # model selector + predict
 choice = st.selectbox("Choose a model", list(models.keys()))
 if st.button("Predict"):
+    # Ensure content is a string
+    if not isinstance(content, str):
+        st.error(f"Content is not a string. Type: {type(content)}")
+        st.stop()
+    
     cleaned = preprocess_text(content)
-    if not cleaned:
+    
+    # Check if cleaned is a string and not empty
+    if not isinstance(cleaned, str):
+        st.error(f"Preprocessing did not return a string. Type: {type(cleaned)}")
+        st.stop()
+    
+    if not cleaned or not cleaned.strip():
         st.error("Nothing left after preprocessing → try different text.")
         st.stop()
 
-    X_vec = vectorizer.transform([cleaned])
+    # Debug: show the cleaned text length and first few characters
+    st.write(f"Debug: Cleaned text length: {len(cleaned)}")
+    st.write(f"Debug: First 50 chars: {cleaned[:50]}")
+
+    try:
+        X_vec = vectorizer.transform([cleaned])
+    except Exception as e:
+        st.error(f"Vectorization error: {e}")
+        st.error(f"Cleaned text type: {type(cleaned)}")
+        st.error(f"Cleaned text value: {repr(cleaned)}")
+        st.stop()
+    
     clf   = models[choice]
     pred  = clf.predict(X_vec)[0]
 
