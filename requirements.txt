@@ -11,4 +11,3 @@ seaborn
 plotly
 wordcloud
 tqdm
-docx2txt
