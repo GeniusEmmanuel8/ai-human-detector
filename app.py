@@ -101,25 +101,26 @@ if st.button("Predict"):
     st.write(f"Debug: Cleaned text length: {len(cleaned)}")
     st.write(f"Debug: First 50 chars: {cleaned[:50]}")
 
+    clf   = models[choice]
     try:
-        X_vec = vectorizer.transform([cleaned])
+        pred  = clf.predict([cleaned])[0]
     except Exception as e:
-        st.error(f"Vectorization error: {e}")
+        st.error(f"Prediction error: {e}")
         st.error(f"Cleaned text type: {type(cleaned)}")
         st.error(f"Cleaned text value: {repr(cleaned)}")
         st.stop()
-    
-    clf   = models[choice]
-    pred  = clf.predict(X_vec)[0]
 
     st.subheader("Prediction:")
     st.write("🧠 **AI-Written**" if pred == 1 else "👤 **Human-Written**")
 
     # show confidence if available
     if hasattr(clf, "predict_proba"):
-        p = clf.predict_proba(X_vec)[0]
-        st.write(f"**Confidence:** {max(p):.2%}")
-        st.write(f"Human: {p[0]:.2%}   AI: {p[1]:.2%}")
+        try:
+            p = clf.predict_proba([cleaned])[0]
+            st.write(f"**Confidence:** {max(p):.2%}")
+            st.write(f"Human: {p[0]:.2%}   AI: {p[1]:.2%}")
+        except Exception as e:
+            st.write(f"Probability error: {e}")
 
     with st.expander("Show preprocessed text"):
         st.write(cleaned)
